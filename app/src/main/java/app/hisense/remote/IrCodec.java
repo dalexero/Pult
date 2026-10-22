@@ -63,6 +63,16 @@ public final class IrCodec {
         public boolean sleep = false;
         public boolean turbo = false;
         public boolean light = true;
+        /** Интенсивность осушения / смещение в авто-режиме, -2..+2 (протокол A). */
+        public int dryGrade = 0;
+
+        public State copy() {
+            State c = new State();
+            c.power = power; c.mode = mode; c.temp = temp; c.fan = fan;
+            c.swing = swing; c.sleep = sleep; c.turbo = turbo; c.light = light;
+            c.dryGrade = dryGrade;
+            return c;
+        }
     }
 
     /** Биты вентилятора: одинаковы для обоих протоколов (авто=0, мин=3, сред=2, макс=1). */
@@ -105,9 +115,12 @@ public final class IrCodec {
             smart = true;
         }
 
+        int g = clamp(s.dryGrade, -2, 2);
+        int dry = g < 0 ? (0b100 | (-g & 0b11)) : (g & 0b11);
         int b2 = (fan & 0b11)
                 | (togglePower ? 1 << 2 : 0)
                 | (s.sleep ? 1 << 3 : 0)
+                | dry << 4
                 | (toggleSwing ? 1 << 7 : 0);
         int b3 = (mode & 0b111) | ((temp - A_MIN_TEMP) & 0xF) << 4;
         int b4 = smart ? 1 << 7 : 0;

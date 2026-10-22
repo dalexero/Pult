@@ -31,7 +31,7 @@ jobs:
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.${{ github.run_number }}
-          name: Пульт Hisense v1.0.${{ github.run_number }}
+          tag_name: v1.1.${{ github.run_number }}
+          name: Пульт Hisense v1.1.${{ github.run_number }}
           body: Установите HisenseRemote.apk на телефон.
           files: HisenseRemote.apk

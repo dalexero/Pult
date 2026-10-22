@@ -27,6 +27,8 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -49,6 +51,7 @@ public class MainActivity extends Activity {
 
     private final IrCodec.State st = new IrCodec.State();
     private boolean protocolB = false;
+    private boolean precisePower = true;
 
     private ConsumerIrManager ir;
     private final ExecutorService irThread = Executors.newSingleThreadExecutor();
@@ -58,7 +61,8 @@ public class MainActivity extends Activity {
     private TextView powerBtn, statusLine, protoA, protoB, sendFlash;
     private TextView[] modeChips, fanChips;
     private TextView swingChip, sleepChip, turboChip, lightChip;
-    private LinearLayout lightWrap;
+    private LinearLayout lightWrap, preciseWrap;
+    private TextView preciseChip;
 
     private static final int[] MODES = {
             IrCodec.MODE_AUTO, IrCodec.MODE_COOL, IrCodec.MODE_HEAT, IrCodec.MODE_DRY, IrCodec.MODE_FAN};
@@ -114,6 +118,7 @@ public class MainActivity extends Activity {
         st.turbo = p.getBoolean("turbo", false);
         st.light = p.getBoolean("light", true);
         protocolB = p.getBoolean("protocolB", false);
+        precisePower = p.getBoolean("precisePower", true);
     }
 
     private void save() {
@@ -127,19 +132,28 @@ public class MainActivity extends Activity {
                 .putBoolean("turbo", st.turbo)
                 .putBoolean("light", st.light)
                 .putBoolean("protocolB", protocolB)
+                .putBoolean("precisePower", precisePower)
                 .apply();
     }
 
     // ------------------------------------------------------------------ отправка ИК
 
-    /** Отправляет текущее состояние. cmd — для протокола B, togglePower/toggleSwing — для A. */
-    private void send(int cmd, boolean togglePower, boolean toggleSwing) {
-        final int[] pattern;
-        if (protocolB) {
-            pattern = IrCodec.patternKelon168(IrCodec.encodeKelon168(st, cmd, IrCodec.nowMinutes()));
-        } else {
-            pattern = IrCodec.patternKelon48(IrCodec.encodeKelon48(st, togglePower, toggleSwing));
+    /** Пачка ИК-кадров: каждый кадр + сколько раз его повторить + пауза после. */
+    private static final class Frame {
+        final int[] pattern; final int times; final int pauseMs;
+        Frame(int[] pattern, int times, int pauseMs) {
+            this.pattern = pattern; this.times = times; this.pauseMs = pauseMs;
         }
+    }
+
+    private static final int REPEAT = 2;      // одинаковые команды шлём дважды — надёжнее
+    private static final int GAP_MS = 150;
+
+    private Frame frameA(IrCodec.State s, boolean togglePower, boolean toggleSwing, int times, int pause) {
+        return new Frame(IrCodec.patternKelon48(IrCodec.encodeKelon48(s, togglePower, toggleSwing)), times, pause);
+    }
+
+    private void transmit(List<Frame> frames) {
         save();
         flash();
         if (ir == null || !ir.hasIrEmitter()) {
@@ -148,11 +162,31 @@ public class MainActivity extends Activity {
         }
         irThread.execute(() -> {
             try {
-                ir.transmit(IrCodec.FREQ, pattern);
+                for (Frame f : frames) {
+                    for (int i = 0; i < f.times; i++) {
+                        ir.transmit(IrCodec.FREQ, f.pattern);
+                        Thread.sleep(i == f.times - 1 ? f.pauseMs : GAP_MS);
+                    }
+                }
             } catch (Exception e) {
                 ui.post(() -> toast("Ошибка ИК: " + e.getMessage()));
             }
         });
+    }
+
+    /** Отправляет текущее состояние. cmd — для протокола B, toggleSwing — для A. */
+    private void send(int cmd, boolean toggleSwing) {
+        List<Frame> frames = new ArrayList<>();
+        if (protocolB) {
+            frames.add(new Frame(IrCodec.patternKelon168(
+                    IrCodec.encodeKelon168(st, cmd, IrCodec.nowMinutes())), REPEAT, GAP_MS));
+        } else if (toggleSwing) {
+            // переключатель: повтор вернул бы жалюзи обратно, поэтому один раз
+            frames.add(frameA(st, false, true, 1, GAP_MS));
+        } else {
+            frames.add(frameA(st, false, false, REPEAT, GAP_MS));
+        }
+        transmit(frames);
     }
 
     /** Отправить изменение настройки: если кондиционер выключен — только запомнить. */
@@ -161,7 +195,32 @@ public class MainActivity extends Activity {
             toast("Сохранено. Применится при включении");
             return;
         }
-        send(cmd, false, toggleSwing);
+        send(cmd, toggleSwing);
+    }
+
+    /**
+     * Питание для протокола A.
+     * Точный режим: команда «авто» всегда включает кондиционер, поэтому сначала
+     * гарантированно включаем его, возвращаем нужный режим и, если надо выключить,
+     * только потом шлём переключатель питания. Результат не зависит от того,
+     * дошёл ли прошлый сигнал.
+     */
+    private void sendPowerA(boolean on) {
+        List<Frame> frames = new ArrayList<>();
+        if (!precisePower) {
+            frames.add(frameA(st, true, false, 1, GAP_MS));
+        } else {
+            IrCodec.State smart = st.copy();
+            smart.mode = IrCodec.MODE_AUTO;
+            smart.turbo = false;
+            smart.dryGrade = 2;          // сдвиг +2 — чтобы компрессор не стартовал зря
+            frames.add(frameA(smart, false, false, REPEAT, 400));
+            IrCodec.State actual = st.copy();
+            actual.power = true;
+            frames.add(frameA(actual, false, false, REPEAT, 600));
+            if (!on) frames.add(frameA(actual, true, false, 1, GAP_MS));
+        }
+        transmit(frames);
     }
 
     // ------------------------------------------------------------------ действия
@@ -170,7 +229,8 @@ public class MainActivity extends Activity {
         haptic(v);
         st.power = !st.power;
         if (!st.power) st.turbo = false;
-        send(IrCodec.CMD_POWER, true, false);
+        if (protocolB) send(IrCodec.CMD_POWER, false);
+        else sendPowerA(st.power);
         refresh();
     }
 
@@ -242,13 +302,15 @@ public class MainActivity extends Activity {
     private void showHelp() {
         new AlertDialog.Builder(this)
                 .setTitle("Как настроить")
-                .setMessage("1. Направьте верх телефона (блок камеры) на кондиционер, 1–5 м.\n\n"
+                .setMessage("1. Направьте верх телефона (блок камеры) прямо на кондиционер, "
+                        + "лучше с расстояния 1–4 м. ИК-луч у телефона узкий — угол важен.\n\n"
                         + "2. Нажмите кнопку питания. Если кондиционер пискнул — всё готово.\n\n"
-                        + "3. Если реакции нет — внизу переключите протокол на другой и попробуйте снова.\n\n"
-                        + "Протокол A: кнопка питания работает как переключатель. Если приложение "
-                        + "показывает «вкл», а кондиционер выключен — долгое нажатие на кнопку питания "
-                        + "исправит индикатор без отправки сигнала.\n\n"
-                        + "Протокол B передаёт всё состояние сразу, сбиться не может.")
+                        + "3. Если реакции нет — внизу переключите протокол и попробуйте снова.\n\n"
+                        + "«Точное вкл/выкл» (протокол A): кондиционер может пискнуть 2–3 раза "
+                        + "и на секунду переключиться в «авто» — так и задумано: зато кнопки "
+                        + "«вкл» и «выкл» срабатывают точно, даже если прошлый сигнал не дошёл.\n\n"
+                        + "Без точного режима питание — переключатель. Если индикатор разошёлся "
+                        + "с реальностью, удерживайте кнопку питания — он исправится без сигнала.")
                 .setPositiveButton("OK", null)
                 .show();
     }
@@ -392,6 +454,18 @@ public class MainActivity extends Activity {
         proto.addView(protoA, weighted(0, 48));
         proto.addView(protoB, weighted(1, 48));
         root.addView(proto);
+        preciseWrap = row();
+        preciseChip = chip("Точное вкл/выкл");
+        preciseChip.setOnClickListener(v -> {
+            haptic(v);
+            precisePower = !precisePower;
+            save();
+            refresh();
+        });
+        preciseWrap.addView(preciseChip, weighted(0, 48));
+        LinearLayout.LayoutParams pw = new LinearLayout.LayoutParams(-1, -2);
+        pw.topMargin = dp(8);
+        root.addView(preciseWrap, pw);
         TextView hint = text("Не реагирует? Переключите протокол и нажмите питание ещё раз.",
                 12, TEXT_DIM, false);
         hint.setPadding(dp(4), dp(10), dp(4), 0);
@@ -421,6 +495,9 @@ public class MainActivity extends Activity {
         selectChip(turboChip, st.turbo, accent);
         selectChip(lightChip, st.light, accent);
         lightWrap.setVisibility(protocolB ? View.VISIBLE : View.GONE);
+        preciseWrap.setVisibility(protocolB ? View.GONE : View.VISIBLE);
+        selectChip(preciseChip, precisePower, accent);
+        preciseChip.setText(precisePower ? "✓ Точное вкл/выкл" : "Точное вкл/выкл: выкл.");
         selectChip(protoA, !protocolB, TEXT);
         selectChip(protoB, protocolB, TEXT);
     }
