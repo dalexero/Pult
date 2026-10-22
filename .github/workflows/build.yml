@@ -4,6 +4,9 @@ on:
   push:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -22,3 +25,13 @@ jobs:
         with:
           name: HisenseRemote-apk
           path: app/build/outputs/apk/release/*.apk
+      - name: Rename APK
+        run: cp app/build/outputs/apk/release/app-release.apk HisenseRemote.apk
+      - name: Publish release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Пульт Hisense v1.0.${{ github.run_number }}
+          body: Установите HisenseRemote.apk на телефон.
+          files: HisenseRemote.apk
