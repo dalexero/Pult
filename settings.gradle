@@ -13,4 +13,4 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "HisenseRemote"
-include ":app"
+include ":app", ":chigo"

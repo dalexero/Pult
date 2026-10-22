@@ -21,17 +21,23 @@ jobs:
           gradle-version: "8.10.2"
       - name: Build
         run: gradle assembleRelease --no-daemon
+      - name: Collect APKs
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk HisenseRemote.apk
+          cp chigo/build/outputs/apk/release/chigo-release.apk ChigoRemote.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: HisenseRemote-apk
-          path: app/build/outputs/apk/release/*.apk
-      - name: Rename APK
-        run: cp app/build/outputs/apk/release/app-release.apk HisenseRemote.apk
+          name: apks
+          path: "*.apk"
       - name: Publish release
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.1.${{ github.run_number }}
-          name: Пульт Hisense v1.1.${{ github.run_number }}
-          body: Установите HisenseRemote.apk на телефон.
-          files: HisenseRemote.apk
+          tag_name: build-${{ github.run_number }}
+          name: Пульты · сборка ${{ github.run_number }}
+          body: |
+            ChigoRemote.apk — пульт для кондиционеров Chigo
+            HisenseRemote.apk — пульт для кондиционеров Hisense
+          files: |
+            HisenseRemote.apk
+            ChigoRemote.apk
