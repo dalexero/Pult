@@ -25,6 +25,7 @@ jobs:
         run: |
           cp app/build/outputs/apk/release/app-release.apk HisenseRemote.apk
           cp chigo/build/outputs/apk/release/chigo-release.apk ChigoRemote.apk
+          cp rovex/build/outputs/apk/release/rovex-release.apk RovexRemote.apk
       - uses: actions/upload-artifact@v4
         with:
           name: apks
@@ -36,8 +37,10 @@ jobs:
           tag_name: build-${{ github.run_number }}
           name: Пульты · сборка ${{ github.run_number }}
           body: |
+            RovexRemote.apk — пульт для кондиционеров Rovex (8 протоколов, автоподбор)
             ChigoRemote.apk — пульт для кондиционеров Chigo
             HisenseRemote.apk — пульт для кондиционеров Hisense
           files: |
             HisenseRemote.apk
             ChigoRemote.apk
+            RovexRemote.apk

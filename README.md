@@ -1,6 +1,7 @@
 # Пульты для кондиционеров (iQOO Neo 10)
 
 - `app/` — **Пульт Hisense** (протоколы Kelon 48 / 168 бит)
+- `rovex/` — **Пульт Rovex** (Gree, AUX, Midea, Coolix, Haier, Chigo — с автоподбором; порт IRremoteESP8266, сверен бит в бит)
 - `chigo/` — **Пульт Chigo** (пульты ZH/LT-01 и ZH/JG-01, раскладка по Arduino-HeatpumpIR)
 
 Готовые APK — в разделе Releases.

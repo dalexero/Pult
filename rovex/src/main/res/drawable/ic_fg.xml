@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Снежинка в круге -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:strokeColor="#FF8A3D" android:strokeWidth="4" android:fillColor="#00000000"
+        android:pathData="M54,30 A24,24 0 1,1 53.99,30 Z" />
+    <path android:strokeColor="#F2F5F8" android:strokeWidth="3.5" android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M54,40 L54,68 M41.9,47 L66.1,61 M41.9,61 L66.1,47
+                          M49,43 L54,47 L59,43 M49,65 L54,61 L59,65" />
+</vector>
